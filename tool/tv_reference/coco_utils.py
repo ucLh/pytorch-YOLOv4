@@ -1,6 +1,7 @@
 import copy
 import os
 from PIL import Image
+from tqdm import tqdm
 
 import torch
 import torch.utils.data
@@ -159,8 +160,8 @@ def convert_to_coco_api(ds, bbox_fmt='voc'):
         image_id = targets["image_id"].item()
         img_dict = {}
         img_dict['id'] = image_id
-        img_dict['height'] = img.shape[-2]
-        img_dict['width'] = img.shape[-1]
+        img_dict['height'] = img.shape[0]
+        img_dict['width'] = img.shape[1]
         dataset['images'].append(img_dict)
         bboxes = targets["boxes"]
         # to coco format: xmin, ymin, w, h

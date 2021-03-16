@@ -15,6 +15,7 @@ import sys
 import time
 from collections import defaultdict
 
+import cv2
 import numpy as np
 import torch
 from PIL import Image, ImageDraw
@@ -96,7 +97,7 @@ def evaluate_on_coco(cfg, resFile):
     with open(resFile, 'r') as f:
         unsorted_annotations = json.load(f)
     sorted_annotations = list(sorted(unsorted_annotations, key=lambda single_annotation: single_annotation["image_id"]))
-    sorted_annotations = list(map(convert_cat_id_and_reorientate_bbox, sorted_annotations))
+    # sorted_annotations = list(map(convert_cat_id_and_reorientate_bbox, sorted_annotations))
     reshaped_annotations = defaultdict(list)
     for annotation in sorted_annotations:
         reshaped_annotations[annotation['image_id']].append(annotation)
@@ -112,8 +113,8 @@ def evaluate_on_coco(cfg, resFile):
         gt_annotation_raw_images = gt_annotation_raw["images"]
         gt_annotation_raw_labels = gt_annotation_raw["annotations"]
 
-    rgb_label = (255, 0, 0)
-    rgb_pred = (0, 255, 0)
+    rgb_pred = (255, 0, 0)
+    rgb_label = (0, 255, 0)
 
     for i, image_id in enumerate(reshaped_annotations):
         image_annotations = reshaped_annotations[image_id]
@@ -125,24 +126,27 @@ def evaluate_on_coco(cfg, resFile):
         ))
         if len(gt_annotation_image_raw) == 1:
             image_path = os.path.join(cfg.dataset_dir, gt_annotation_image_raw[0]["file_name"])
-            actual_image = Image.open(image_path).convert('RGB')
-            draw = ImageDraw.Draw(actual_image)
+            actual_image = cv2.imread(image_path)
+            actual_image = cv2.cvtColor(actual_image, cv2.COLOR_BGR2RGB)
 
             for annotation in image_annotations:
                 x1_pred, y1_pred, w, h = annotation['bbox']
                 x2_pred, y2_pred = x1_pred + w, y1_pred + h
+                x1_pred, y1_pred, x2_pred, y2_pred = int(x1_pred), int(y1_pred), int(x2_pred), int(y2_pred)
                 cls_id = annotation['category_id']
                 label = get_class_name(cls_id)
-                draw.text((x1_pred, y1_pred), label, fill=rgb_pred)
-                draw.rectangle([x1_pred, y1_pred, x2_pred, y2_pred], outline=rgb_pred)
+                actual_image = cv2.rectangle(actual_image, (x1_pred, y1_pred), (x2_pred, y2_pred), rgb_pred, 1)
+                cv2.putText(actual_image, label, (x1_pred, y1_pred), cv2.FONT_HERSHEY_SIMPLEX, 1, rgb_pred, 2)
             for annotation in gt_annotation_labels_raw:
                 x1_truth, y1_truth, w, h = annotation['bbox']
                 x2_truth, y2_truth = x1_truth + w, y1_truth + h
+                x1_truth, y1_truth, x2_truth, y2_truth = int(x1_truth), int(y1_truth), int(x2_truth), int(y2_truth)
                 cls_id = annotation['category_id']
                 label = get_class_name(cls_id)
-                draw.text((x1_truth, y1_truth), label, fill=rgb_label)
-                draw.rectangle([x1_truth, y1_truth, x2_truth, y2_truth], outline=rgb_label)
-            actual_image.save("./data/outcome/predictions_{}".format(gt_annotation_image_raw[0]["file_name"]))
+                actual_image = cv2.rectangle(actual_image, (x1_truth, y1_truth), (x2_truth, y2_truth), rgb_label, 1)
+                cv2.putText(actual_image, label, (x1_truth, y1_truth), cv2.FONT_HERSHEY_SIMPLEX, 1, rgb_label, 2)
+            actual_image_name = (gt_annotation_image_raw[0]["file_name"]).split('/')[-1]
+            cv2.imwrite("./preds/golf_gray_coco_train/{}".format(actual_image_name), actual_image)
         else:
             print('please check')
             break
@@ -172,43 +176,48 @@ def test(model, annotations, cfg):
 
     # do one forward pass first to circumvent cold start
     throwaway_image = Image.open('data/dog.jpg').convert('RGB').resize((model.width, model.height))
-    do_detect(model, throwaway_image, 0.5, 80, 0.4, use_cuda)
+    do_detect(model, throwaway_image, 0.5, 0.4, use_cuda=1)
     boxes_json = []
 
     for i, image_annotation in enumerate(images):
         logging.info("currently on image: {}/{}".format(i + 1, len(images)))
         image_file_name = image_annotation["file_name"]
+
+        # image_file_name = image_file_name.split('/')[-1]
+        # image_file_name = image_file_name.split('.')[0]
+        # image_file_name += '.jpg'
+
         image_id = image_annotation["id"]
         image_height = image_annotation["height"]
         image_width = image_annotation["width"]
 
         # open and resize each image first
-        img = Image.open(os.path.join(cfg.dataset_dir, image_file_name)).convert('RGB')
-        sized = img.resize((model.width, model.height))
+        img = cv2.imread(os.path.join(cfg.dataset_dir, image_file_name))
+        sized = cv2.resize(img, (model.width, model.height))
+        sized = cv2.cvtColor(sized, cv2.COLOR_BGR2RGB)
 
         if use_cuda:
             model.cuda()
 
         start = time.time()
-        boxes = do_detect(model, sized, 0.0, 80, 0.4, use_cuda)
+        boxes = do_detect(model, sized, 0.5, 0.4, use_cuda=1)
+        boxes = boxes[0]
         finish = time.time()
         if type(boxes) == list:
-            for box in boxes:
+            for box in boxes[:100]:
                 box_json = {}
-                category_id = box[-1]
+                category_id = box[-1] + 1
                 score = box[-2]
                 bbox_normalized = box[:4]
                 box_json["category_id"] = int(category_id)
                 box_json["image_id"] = int(image_id)
-                bbox = []
-                for i, bbox_coord in enumerate(bbox_normalized):
-                    modified_bbox_coord = float(bbox_coord)
-                    if i % 2:
-                        modified_bbox_coord *= image_height
-                    else:
-                        modified_bbox_coord *= image_width
-                    modified_bbox_coord = round(modified_bbox_coord, 2)
-                    bbox.append(modified_bbox_coord)
+
+                x1 = int(box[0] * image_width)
+                y1 = int(box[1] * image_height)
+                x2 = int(box[2] * image_width)
+                y2 = int(box[3] * image_height)
+                bbox = [x1, y1, x2 - x1, y2 - y1]
+
                 box_json["bbox_normalized"] = list(map(lambda x: round(float(x), 2), bbox_normalized))
                 box_json["bbox"] = bbox
                 box_json["score"] = round(float(score), 2)
@@ -237,13 +246,15 @@ def get_args(**kwargs):
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('-f', '--load', dest='load', type=str, default=None,
                         help='Load model from a .pth file')
-    parser.add_argument('-g', '--gpu', metavar='G', type=str, default='-1',
+    parser.add_argument('-g', '--gpu', metavar='G', type=str, default='0',
                         help='GPU', dest='gpu')
-    parser.add_argument('-dir', '--data-dir', type=str, default=None,
+    parser.add_argument('-dir', '--data-dir', type=str,
+                        default='/home/luch/Programming/Python/Datasets/coco/val2017_gray/',
                         help='dataset dir', dest='dataset_dir')
-    parser.add_argument('-gta', '--ground_truth_annotations', type=str, default='instances_val2017.json',
+    parser.add_argument('-gta', '--ground_truth_annotations', type=str,
+                        default='/home/luch/Programming/Python/Datasets/coco/annotations/instances_val_grayscale_animals_bags_ball_baseball_bats.json',
                         help='ground truth annotations file', dest='gt_annotations_path')
-    parser.add_argument('-w', '--weights_file', type=str, default='weights/yolov4.weights',
+    parser.add_argument('-w', '--weights_file', type=str, default='checkpoints/Yolov4_epoch9.pth',
                         help='weights file to load', dest='weights_file')
     parser.add_argument('-c', '--model_config', type=str, default='cfg/yolov4.cfg',
                         help='model config file to load', dest='model_config')
@@ -293,14 +304,16 @@ def init_logger(log_file=None, log_dir=None, log_level=logging.INFO, mode='w', s
 if __name__ == "__main__":
     logging = init_logger(log_dir='log')
     cfg = get_args(**Cfg)
-    os.environ["CUDA_VISIBLE_DEVICES"] = cfg.gpu
+    os.environ["CUDA_VISIBLE_DEVICES"] = '0'
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     logging.info(f'Using device {device}')
 
     model = Darknet(cfg.model_config)
+    ckpt = torch.load(cfg.weights_file)
+    model.load_state_dict(ckpt['state_dict'])
 
     model.print_network()
-    model.load_weights(cfg.weights_file)
+    # model.load_weights(cfg.weights_file)
     model.eval()  # set model away from training
 
     if torch.cuda.device_count() > 1:
