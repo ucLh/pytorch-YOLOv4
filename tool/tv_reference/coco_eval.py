@@ -61,6 +61,20 @@ class CocoEvaluator(object):
         for iou_type, coco_eval in self.coco_eval.items():
             print("IoU metric: {}".format(iou_type))
             coco_eval.summarize()
+        stats = self.coco_eval['bbox'].stats
+        log_list = [f'Average Precision  (AP) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = {stats[0]}',
+                    f'Average Precision  (AP) @[ IoU=0.50      | area=   all | maxDets=100 ] = {stats[1]} ',
+                    f'Average Precision  (AP) @[ IoU=0.75      | area=   all | maxDets=100 ] = {stats[2]} ',
+                    f'Average Precision  (AP) @[ IoU=0.50:0.95 | area= small | maxDets=100 ] = {stats[3]} ',
+                    f'Average Precision  (AP) @[ IoU=0.50:0.95 | area=medium | maxDets=100 ] = {stats[4]} ',
+                    f'Average Precision  (AP) @[ IoU=0.50:0.95 | area= large | maxDets=100 ] = {stats[5]} ',
+                    f'Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets=  1 ] = {stats[6]} ',
+                    f'Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets= 10 ] = {stats[7]} ',
+                    f'Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = {stats[8]} ',
+                    f'Average Recall     (AR) @[ IoU=0.50:0.95 | area= small | maxDets=100 ] = {stats[9]} ',
+                    f'Average Recall     (AR) @[ IoU=0.50:0.95 | area=medium | maxDets=100 ] = {stats[10]} ',
+                    f'Average Recall     (AR) @[ IoU=0.50:0.95 | area= large | maxDets=100 ] = {stats[11]}']
+        return log_list
 
     def prepare(self, predictions, iou_type):
         if iou_type == "bbox":

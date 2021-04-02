@@ -13,4 +13,13 @@
     # Run training
     cd ../
     python3 train.py \
-    --pretrained /path/to/yolov4.weights
+    --pretrained /path/to/yolov4.weights \
+    --batch_size 32 \
+    --subdivisions 32 \
+    --learning_rate 0.000000000261 \
+    --num_epochs 300 \
+    --data_dir /home/luch/Programming/Python/TestTasks/detection_dataset \
+    --train_label data/train_simple.txt \
+    --val_label test_simple.txt
+    
+    

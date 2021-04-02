@@ -288,17 +288,16 @@ def collate(batch):
     return images, bboxes
 
 
-def train(model, device, config, epochs=5, batch_size=1, save_cp=True, log_step=20, img_scale=0.5, start_epoch=0):
+def train(model, device, config, epochs=5, batch_size=32, save_cp=True, log_step=20, img_scale=0.5, start_epoch=0):
     train_dataset = Yolo_dataset(config.train_label, config, train=True)
     val_dataset = Yolo_dataset(config.val_label, config, train=False)
 
     n_train = len(train_dataset)
     n_val = len(val_dataset)
-    # config.batch = 16
-    train_loader = DataLoader(train_dataset, batch_size=config.batch // config.subdivisions, shuffle=True,
+    train_loader = DataLoader(train_dataset, batch_size=batch_size // config.subdivisions, shuffle=True,
                               num_workers=8, pin_memory=True, drop_last=True, collate_fn=collate)
 
-    val_loader = DataLoader(val_dataset, batch_size=config.batch // config.subdivisions, shuffle=True, num_workers=8,
+    val_loader = DataLoader(val_dataset, batch_size=batch_size // config.subdivisions, shuffle=True, num_workers=8,
                             pin_memory=True, drop_last=True, collate_fn=val_collate)
 
     if config.debug_input:
@@ -321,7 +320,7 @@ def train(model, device, config, epochs=5, batch_size=1, save_cp=True, log_step=
     # writer.add_images('legend',
     #                   torch.from_numpy(train_dataset.label2colorlegend2(cfg.DATA_CLASSES).transpose([2, 0, 1])).to(
     #                       device).unsqueeze(0))
-    max_itr = config.TRAIN_EPOCHS * n_train
+    max_itr = config.num_epochs * n_train
     # global_step = cfg.TRAIN_MINEPOCH * n_train
     global_step = 0
     logging.info(f'''Starting training:
@@ -540,7 +539,9 @@ def evaluate(model, data_loader, cfg, device, logger=None, **kwargs):
 
     # accumulate predictions from all images
     coco_evaluator.accumulate()
-    coco_evaluator.summarize()
+    summary_ = coco_evaluator.summarize()
+    for stat in summary_:
+        logging.debug(stat)
 
     return coco_evaluator
 
@@ -549,19 +550,22 @@ def get_args(**kwargs):
     cfg = kwargs
     parser = argparse.ArgumentParser(description='Train the Model on images and target masks',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    # parser.add_argument('-b', '--batch-size', metavar='B', type=int, nargs='?', default=2,
-    #                     help='Batch size', dest='batchsize')
-    parser.add_argument('-l', '--learning-rate', metavar='LR', type=float, nargs='?', default=0.001,
+    parser.add_argument('-b', '--batch_size', metavar='B', type=int, nargs='?', default=32,
+                        help='Batch size', dest='batch_size')
+    parser.add_argument('--subdivisions', metavar='B', type=int, nargs='?', default=32,
+                        help='Subdivisions of batch size', dest='subdivisions')
+    parser.add_argument('-l', '--learning_rate', metavar='LR', type=float, nargs='?', default=0.000000000261,
                         help='Learning rate', dest='learning_rate')
-    parser.add_argument('-f', '--load', dest='load', type=str, default=None,
-                        help='Load model from a .pth file')
-    parser.add_argument('-g', '--gpu', metavar='G', type=str, default='-1',
-                        help='GPU', dest='gpu')
-    parser.add_argument('-dir', '--data-dir', type=str, default='/home/luch/Programming/Python/TestTasks/detection_dataset',
-                        help='dataset dir', dest='dataset_dir')
-    parser.add_argument('-pretrained', type=str, default='ckpt/default/yolov4.weights', help='pretrained yolov4.weights')
+    parser.add_argument('--num_epochs', type=int, default=300,
+                        help='Number of epochs to train', dest='num_epochs')
+    parser.add_argument('-dir', '--data_dir', type=str, default='/home/luch/Programming/Python/TestTasks/detection_dataset',
+                        help='dataset dir', dest='data_dir')
+    parser.add_argument('--train_label', type=str, default='data/train_simple.txt',
+                        help="train label path", dest='train_label')
+    parser.add_argument('--val_label', type=str, default='data/test_simple.txt',
+                        help="val label path", dest='val_label')
+    parser.add_argument('--pretrained', type=str, default='ckpt/default/yolov4.weights', help='pretrained yolov4.weights')
     parser.add_argument('-classes', type=int, default=80, help='dataset classes')
-    parser.add_argument('-train_label_path', dest='train_label', type=str, default='data/test_task_train.txt', help="train label path")
     parser.add_argument(
         '-optimizer', type=str, default='adam',
         help='training optimizer',
@@ -630,14 +634,14 @@ if __name__ == "__main__":
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     logging.info(f'Using device {device}')
 
-    cfg.use_darknet_cfg = True
-    if cfg.use_darknet_cfg:
-        model = Darknet(cfg.cfgfile)
-    else:
-        model = Yolov4(cfg.pretrained, n_classes=cfg.classes)
-    # ckpt = torch.load('ckpt/Yolov4_epoch33.pth')
-    # model.load_state_dict(ckpt['state_dict'])
-    model.load_weights(cfg.pretrained)
+    # Initialise model
+    model = Darknet(cfg.cfgfile)
+    _, extension = os.path.splitext(cfg.pretrained)
+    if extension == '.weights':
+        model.load_weights(cfg.pretrained)
+    elif extension == '.pth':
+        ckpt = torch.load(cfg.pretrained)
+        model.load_state_dict(ckpt['state_dict'])
 
     # if torch.cuda.device_count() > 1:
     #     model = torch.nn.DataParallel(model)
@@ -646,11 +650,13 @@ if __name__ == "__main__":
     try:
         train(model=model,
               config=cfg,
-              epochs=cfg.TRAIN_EPOCHS,
+              epochs=cfg.num_epochs,
               device=device, 
-              start_epoch=0,)
+              start_epoch=0,
+              batch_size=cfg.batch_size)
     except KeyboardInterrupt:
-        torch.save(model.state_dict(), 'INTERRUPTED.pth')
+        save_dict = {'state_dict': model.state_dict()}
+        torch.save(save_dict, 'INTERRUPTED.pth')
         logging.info('Saved interrupt')
         try:
             sys.exit(0)
