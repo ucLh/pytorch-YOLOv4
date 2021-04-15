@@ -315,8 +315,8 @@ def train(model, device, config, epochs=5, batch_size=32, save_cp=True, log_step
         cv2.imwrite('train_img.png', img_train)
 
     writer = SummaryWriter(log_dir=config.TRAIN_TENSORBOARD_DIR,
-                           filename_suffix=f'OPT_{config.TRAIN_OPTIMIZER}_LR_{config.learning_rate}_BS_{config.batch}_Sub_{config.subdivisions}_Size_{config.width}',
-                           comment=f'OPT_{config.TRAIN_OPTIMIZER}_LR_{config.learning_rate}_BS_{config.batch}_Sub_{config.subdivisions}_Size_{config.width}')
+                           filename_suffix=f'OPT_{config.TRAIN_OPTIMIZER}_LR_{config.learning_rate}_BS_{config.batch_size}_Sub_{config.subdivisions}_Size_{config.width}',
+                           comment=f'OPT_{config.TRAIN_OPTIMIZER}_LR_{config.learning_rate}_BS_{config.batch_size}_Sub_{config.subdivisions}_Size_{config.width}')
     # writer.add_images('legend',
     #                   torch.from_numpy(train_dataset.label2colorlegend2(cfg.DATA_CLASSES).transpose([2, 0, 1])).to(
     #                       device).unsqueeze(0))
@@ -325,7 +325,7 @@ def train(model, device, config, epochs=5, batch_size=32, save_cp=True, log_step
     global_step = 0
     logging.info(f'''Starting training:
         Epochs:          {epochs}
-        Batch size:      {config.batch}
+        Batch size:      {config.batch_size}
         Subdivisions:    {config.subdivisions}
         Learning rate:   {config.learning_rate}
         Training size:   {n_train}
@@ -354,20 +354,20 @@ def train(model, device, config, epochs=5, batch_size=32, save_cp=True, log_step
     if config.TRAIN_OPTIMIZER.lower() == 'adam':
         optimizer = optim.Adam(
             model.parameters(),
-            lr=config.learning_rate / config.batch,
+            lr=config.learning_rate / config.batch_size,
             betas=(0.9, 0.999),
             eps=1e-08,
         )
     elif config.TRAIN_OPTIMIZER.lower() == 'sgd':
         optimizer = optim.SGD(
             params=model.parameters(),
-            lr=config.learning_rate / config.batch,
+            lr=config.learning_rate / config.batch_size,
             momentum=config.momentum,
             weight_decay=config.decay,
         )
     scheduler = optim.lr_scheduler.LambdaLR(optimizer, burnin_schedule)
 
-    criterion = Yolo_loss(device=device, batch=config.batch // config.subdivisions, n_classes=config.classes)
+    criterion = Yolo_loss(device=device, batch=config.batch_size // config.subdivisions, n_classes=config.classes)
     # scheduler = ReduceLROnPlateau(optimizer, mode='max', verbose=True, patience=6, min_lr=1e-7)
     # scheduler = CosineAnnealingWarmRestarts(optimizer, 0.001, 1e-6, 20)
 
@@ -408,18 +408,18 @@ def train(model, device, config, epochs=5, batch_size=32, save_cp=True, log_step
                     writer.add_scalar('train/loss_obj', loss_obj.item(), global_step)
                     writer.add_scalar('train/loss_cls', loss_cls.item(), global_step)
                     writer.add_scalar('train/loss_l2', loss_l2.item(), global_step)
-                    writer.add_scalar('lr', scheduler.get_lr()[0] * config.batch, global_step)
+                    writer.add_scalar('lr', scheduler.get_lr()[0] * config.batch_size, global_step)
                     pbar.set_postfix(**{'loss (batch)': loss.item(), 'loss_xy': loss_xy.item(),
                                         'loss_wh': loss_wh.item(),
                                         'loss_obj': loss_obj.item(),
                                         'loss_cls': loss_cls.item(),
                                         'loss_l2': loss_l2.item(),
-                                        'lr': scheduler.get_lr()[0] * config.batch
+                                        'lr': scheduler.get_lr()[0] * config.batch_size
                                         })
                     msg = 'Train step_{}: loss : {}, loss xy : {}, loss wh : {}, loss obj : {}， loss cls : {}, loss l2 : {}, lr : {}'.format(global_step, loss.item(), loss_xy.item(),
                                           loss_wh.item(), loss_obj.item(),
                                           loss_cls.item(), loss_l2.item(),
-                                          scheduler.get_lr()[0] * config.batch)
+                                          scheduler.get_lr()[0] * config.batch_size)
                     logging.debug(msg.encode('utf-8').strip())
 
                 pbar.update(images.shape[0])
