@@ -295,10 +295,10 @@ def train(model, device, config, epochs=5, batch_size=32, save_cp=True, log_step
     n_train = len(train_dataset)
     n_val = len(val_dataset)
     train_loader = DataLoader(train_dataset, batch_size=batch_size // config.subdivisions, shuffle=True,
-                              num_workers=8, pin_memory=True, drop_last=True, collate_fn=collate)
+                              num_workers=config.num_workers, pin_memory=True, drop_last=True, collate_fn=collate)
 
-    val_loader = DataLoader(val_dataset, batch_size=batch_size // config.subdivisions, shuffle=True, num_workers=8,
-                            pin_memory=True, drop_last=True, collate_fn=val_collate)
+    val_loader = DataLoader(val_dataset, batch_size=batch_size // config.subdivisions, shuffle=True,
+                            num_workers=config.num_workers, pin_memory=True, drop_last=True, collate_fn=val_collate)
 
     if config.debug_input:
         batch_val = next(iter(val_loader))
@@ -336,6 +336,7 @@ def train(model, device, config, epochs=5, batch_size=32, save_cp=True, log_step
         Optimizer:       {config.TRAIN_OPTIMIZER}
         Dataset classes: {config.classes}
         Train label path:{config.train_label}
+        Num workers:     {config.num_workers}
         Pretrained:      {config.pretrained}
     ''')
 
@@ -558,6 +559,8 @@ def get_args(**kwargs):
                         help='Learning rate', dest='learning_rate')
     parser.add_argument('--num_epochs', type=int, default=300,
                         help='Number of epochs to train', dest='num_epochs')
+    parser.add_argument('--num_workers', type=int, default=8,
+                        help='Number of processes for loading data into RAM', dest='num_workers')
     parser.add_argument('-dir', '--data_dir', type=str, default='/home/luch/Programming/Python/TestTasks/detection_dataset',
                         help='dataset dir', dest='data_dir')
     parser.add_argument('--train_label', type=str, default='data/train_simple.txt',
