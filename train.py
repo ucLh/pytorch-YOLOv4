@@ -288,7 +288,7 @@ def collate(batch):
     return images, bboxes
 
 
-def train(model, device, config, epochs=5, batch_size=32, save_cp=True, log_step=20, img_scale=0.5, start_epoch=0):
+def train(model, device, config, epochs=5, batch_size=32, save_cp=True, log_step=1, img_scale=0.5, start_epoch=0):
     train_dataset = Yolo_dataset(config.train_label, config, train=True)
     val_dataset = Yolo_dataset(config.val_label, config, train=False)
 
@@ -352,6 +352,9 @@ def train(model, device, config, epochs=5, batch_size=32, save_cp=True, log_step
             factor = 0.01
         return factor
 
+    def const_schedule(i):
+        return 1.0
+
     if config.TRAIN_OPTIMIZER.lower() == 'adam':
         optimizer = optim.Adam(
             model.parameters(),
@@ -366,7 +369,11 @@ def train(model, device, config, epochs=5, batch_size=32, save_cp=True, log_step
             momentum=config.momentum,
             weight_decay=config.decay,
         )
-    scheduler = optim.lr_scheduler.LambdaLR(optimizer, burnin_schedule)
+    if config.no_scheduler:
+        # Create a dummy scheduler so we can still log lr
+        scheduler = optim.lr_scheduler.LambdaLR(optimizer, const_schedule)
+    else:
+        scheduler = optim.lr_scheduler.LambdaLR(optimizer, burnin_schedule)
 
     criterion = Yolo_loss(device=device, batch=config.batch_size // config.subdivisions, n_classes=config.classes)
     # scheduler = ReduceLROnPlateau(optimizer, mode='max', verbose=True, patience=6, min_lr=1e-7)
@@ -421,6 +428,7 @@ def train(model, device, config, epochs=5, batch_size=32, save_cp=True, log_step
                                           loss_wh.item(), loss_obj.item(),
                                           loss_cls.item(), loss_l2.item(),
                                           scheduler.get_lr()[0] * config.batch_size)
+                    print(f'\n Learning rate: {scheduler.get_lr()[0]}')
                     logging.debug(msg.encode('utf-8').strip())
 
                 pbar.update(images.shape[0])
@@ -553,10 +561,13 @@ def get_args(**kwargs):
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('-b', '--batch_size', metavar='B', type=int, nargs='?', default=32,
                         help='Batch size', dest='batch_size')
-    parser.add_argument('--subdivisions', metavar='B', type=int, nargs='?', default=32,
+    parser.add_argument('--subdivisions', type=int, nargs='?', default=32,
                         help='Subdivisions of batch size', dest='subdivisions')
     parser.add_argument('-l', '--learning_rate', metavar='LR', type=float, nargs='?', default=0.000000000261,
                         help='Learning rate', dest='learning_rate')
+    parser.add_argument('--no_scheduler', action='store_true', help='Flag to not use default scheduler')
+    parser.add_argument('--start_epoch', type=int, default=0,
+                        help='Specify start epoch if runnig from INTRRUPTED.pth')
     parser.add_argument('--num_epochs', type=int, default=300,
                         help='Number of epochs to train', dest='num_epochs')
     parser.add_argument('--num_workers', type=int, default=8,
@@ -640,12 +651,15 @@ if __name__ == "__main__":
 
     # Initialise model
     model = Darknet(cfg.cfgfile)
+    start_epoch = cfg.start_epoch
     _, extension = os.path.splitext(cfg.pretrained)
     if extension == '.weights':
         model.load_weights(cfg.pretrained)
     elif extension == '.pth':
         ckpt = torch.load(cfg.pretrained)
         model.load_state_dict(ckpt['state_dict'])
+        if 'epoch' in ckpt:
+            start_epoch = ckpt['epoch']
 
     # if torch.cuda.device_count() > 1:
     #     model = torch.nn.DataParallel(model)
@@ -656,7 +670,7 @@ if __name__ == "__main__":
               config=cfg,
               epochs=cfg.num_epochs,
               device=device, 
-              start_epoch=0,
+              start_epoch=start_epoch,
               batch_size=cfg.batch_size)
     except KeyboardInterrupt:
         save_dict = {'state_dict': model.state_dict()}
