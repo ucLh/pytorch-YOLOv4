@@ -28,7 +28,8 @@ from torch.nn import functional as F
 from tensorboardX import SummaryWriter
 from easydict import EasyDict as edict
 
-from dataset import Yolo_dataset
+import dataset
+import dataset_albu
 from cfg import Cfg
 from models import Yolov4
 from tool.darknet2pytorch import Darknet
@@ -274,7 +275,7 @@ class Yolo_loss(nn.Module):
         return loss, loss_xy, loss_wh, loss_obj, loss_cls, loss_l2
 
 
-def collate(batch):
+def collate_default(batch):
     images = []
     bboxes = []
     for img, box in batch:
@@ -288,7 +289,41 @@ def collate(batch):
     return images, bboxes
 
 
+def collate_albu(batch):
+    images = []
+    bboxes = []
+    for img, box in batch:
+        images.append([img.numpy()])
+        bboxes.append([box])
+    images = np.concatenate(images, axis=0)
+    images = torch.from_numpy(images)
+    bboxes = np.concatenate(bboxes, axis=0)
+    bboxes = torch.from_numpy(bboxes)
+    return images, bboxes
+
+
+def pad_annots(annots):
+    max_num_annots = max(annot.shape[0] for annot in annots)
+
+    if max_num_annots > 0:
+
+        annot_padded = torch.ones((len(annots), max_num_annots, 5)) * -1
+
+        for idx, annot in enumerate(annots):
+            if annot.shape[0] > 0:
+                annot_padded[idx, :annot.shape[0], :] = annot
+    else:
+        annot_padded = torch.ones((len(annots), 1, 5)) * -1
+    return annot_padded
+
+
 def train(model, device, config, epochs=5, batch_size=32, save_cp=True, log_step=1, img_scale=0.5, start_epoch=0):
+    if config.albu_dataset:
+        Yolo_dataset = dataset_albu.Yolo_dataset
+        collate = collate_albu
+    else:
+        Yolo_dataset = dataset.Yolo_dataset
+        collate = collate_default
     train_dataset = Yolo_dataset(config.train_label, config, train=True)
     val_dataset = Yolo_dataset(config.val_label, config, train=False)
 
@@ -559,9 +594,11 @@ def get_args(**kwargs):
     cfg = kwargs
     parser = argparse.ArgumentParser(description='Train the Model on images and target masks',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument('--albu_dataset', action='store_true',
+                        help='Use albumentations based dataset instead of default one')
     parser.add_argument('-b', '--batch_size', metavar='B', type=int, nargs='?', default=32,
                         help='Batch size', dest='batch_size')
-    parser.add_argument('--subdivisions', type=int, nargs='?', default=32,
+    parser.add_argument('--subdivisions', type=int, nargs='?', default=16,
                         help='Subdivisions of batch size', dest='subdivisions')
     parser.add_argument('-l', '--learning_rate', metavar='LR', type=float, nargs='?', default=0.000000000261,
                         help='Learning rate', dest='learning_rate')
@@ -574,9 +611,9 @@ def get_args(**kwargs):
                         help='Number of processes for loading data into RAM', dest='num_workers')
     parser.add_argument('-dir', '--data_dir', type=str, default='/home/luch/Programming/Python/TestTasks/detection_dataset',
                         help='dataset dir', dest='data_dir')
-    parser.add_argument('--train_label', type=str, default='data/train_simple.txt',
+    parser.add_argument('--train_label', type=str, default='data/train_demo.txt',
                         help="train label path", dest='train_label')
-    parser.add_argument('--val_label', type=str, default='data/test_simple.txt',
+    parser.add_argument('--val_label', type=str, default='data/test_demo.txt',
                         help="val label path", dest='val_label')
     parser.add_argument('--pretrained', type=str, default='ckpt/default/yolov4.weights', help='pretrained yolov4.weights')
     parser.add_argument('-classes', type=int, default=80, help='dataset classes')
