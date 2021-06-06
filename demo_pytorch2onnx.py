@@ -17,7 +17,7 @@ def transform_to_onnx(weight_file, batch_size, n_classes, IN_IMAGE_H, IN_IMAGE_W
     model = Yolov4(n_classes=n_classes, inference=True)
 
     pretrained_dict = torch.load(weight_file, map_location=torch.device('cuda'))
-    model.load_state_dict(pretrained_dict)
+    model.load_state_dict(pretrained_dict['state_dict'])
 
     input_names = ["input"]
     output_names = ['boxes', 'confs']

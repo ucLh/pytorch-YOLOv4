@@ -13,6 +13,7 @@
 import time
 import logging
 import os, sys, math
+import json
 import argparse
 from collections import deque
 import datetime
@@ -33,10 +34,9 @@ import dataset_albu
 from cfg import Cfg
 from models import Yolov4
 from tool.darknet2pytorch import Darknet
+from evaluate_on_coco import test
 
 from tool.tv_reference.utils import collate_fn as val_collate
-from tool.tv_reference.coco_utils import convert_to_coco_api
-from tool.tv_reference.coco_eval import CocoEvaluator
 
 
 def bboxes_iou(bboxes_a, bboxes_b, xyxy=True, GIoU=False, DIoU=False, CIoU=False):
@@ -293,6 +293,8 @@ def collate_albu(batch):
     images = []
     bboxes = []
     for img, box in batch:
+        if img is None:
+            return None, None
         images.append([img.numpy()])
         bboxes.append([box])
     images = np.concatenate(images, axis=0)
@@ -317,7 +319,7 @@ def pad_annots(annots):
     return annot_padded
 
 
-def train(model, device, config, epochs=5, batch_size=32, save_cp=True, log_step=1, img_scale=0.5, start_epoch=0):
+def train(model, device, config, epochs=5, batch_size=32, save_cp=True, log_step=100, img_scale=0.5, start_epoch=0):
     if config.albu_dataset:
         Yolo_dataset = dataset_albu.Yolo_dataset
         collate = collate_albu
@@ -426,6 +428,8 @@ def train(model, device, config, epochs=5, batch_size=32, save_cp=True, log_step
             for i, batch in enumerate(train_loader):
                 global_step += 1
                 epoch_step += 1
+                if batch[0] is None:
+                    continue
                 images = batch[0]
                 bboxes = batch[1]
 
@@ -463,7 +467,7 @@ def train(model, device, config, epochs=5, batch_size=32, save_cp=True, log_step
                                           loss_wh.item(), loss_obj.item(),
                                           loss_cls.item(), loss_l2.item(),
                                           scheduler.get_lr()[0] * config.batch_size)
-                    print(f'\n Learning rate: {scheduler.get_lr()[0]}')
+                    # print(f'\n Learning rate: {scheduler.get_lr()[0]}')
                     logging.debug(msg.encode('utf-8').strip())
 
                 pbar.update(images.shape[0])
@@ -481,10 +485,10 @@ def train(model, device, config, epochs=5, batch_size=32, save_cp=True, log_step
                 eval_model.load_state_dict(model.state_dict())
             # eval_model.load_weights('yolov4.weights')
             eval_model.to(device)
-            evaluator = evaluate(eval_model, val_loader, config, device)
+            evaluator = evaluate(eval_model, config)
             del eval_model
 
-            stats = evaluator.coco_eval['bbox'].stats
+            stats = evaluator.stats
             writer.add_scalar('train/AP', stats[0], global_step)
             writer.add_scalar('train/AP50', stats[1], global_step)
             writer.add_scalar('train/AP75', stats[2], global_step)
@@ -508,7 +512,7 @@ def train(model, device, config, epochs=5, batch_size=32, save_cp=True, log_step
                 save_path = os.path.join(config.checkpoints, f'{save_prefix}{epoch + 1}.pth')
                 state = {
                     'state_dict': model.state_dict(),
-                    'epoch': epoch 
+                    'epoch': epoch
                 }
                 torch.save(state, save_path)
                 logging.info(f'Checkpoint {epoch + 1} saved !')
@@ -524,70 +528,23 @@ def train(model, device, config, epochs=5, batch_size=32, save_cp=True, log_step
 
 
 @torch.no_grad()
-def evaluate(model, data_loader, cfg, device, logger=None, **kwargs):
+def evaluate(model, cfg):
     """ finished, tested
     """
-    # cpu_device = torch.device("cpu")
     model.eval()
-    # header = 'Test:'
 
-    coco = convert_to_coco_api(data_loader.dataset, bbox_fmt='coco')
-    coco_evaluator = CocoEvaluator(coco, iou_types = ["bbox"], bbox_fmt='coco')
+    with open(cfg.json_annotations) as annotations_file:
+        try:
+            annotations = json.load(annotations_file)
+        except Exception:
+            print("annotations file not a json")
+            exit()
 
-    for images, targets in tqdm(data_loader):
-        model_input = [[cv2.resize(img, (cfg.w, cfg.h))] for img in images]
-        model_input = np.concatenate(model_input, axis=0)
-        model_input = model_input.transpose(0, 3, 1, 2)
-        model_input = torch.from_numpy(model_input).div(255.0)
-        model_input = model_input.to(device)
-        targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
-
-        if torch.cuda.is_available():
-            torch.cuda.synchronize()
-        model_time = time.time()
-        outputs = model(model_input)
-
-        # outputs = [{k: v.to(cpu_device) for k, v in t.items()} for t in outputs]
-        model_time = time.time() - model_time
-
-        # outputs = outputs.cpu().detach().numpy()
-        res = {}
-        # for img, target, output in zip(images, targets, outputs):
-        for img, target, boxes, confs in zip(images, targets, outputs[0], outputs[1]):
-            img_height, img_width = img.shape[:2]
-            # boxes = output[...,:4].copy()  # output boxes in yolo format
-            boxes = boxes.squeeze(2).cpu().detach().numpy()
-            boxes[...,2:] = boxes[...,2:] - boxes[...,:2] # Transform [x1, y1, x2, y2] to [x1, y1, w, h]
-            boxes[...,0] = boxes[...,0]*img_width
-            boxes[...,1] = boxes[...,1]*img_height
-            boxes[...,2] = boxes[...,2]*img_width
-            boxes[...,3] = boxes[...,3]*img_height
-            boxes = torch.as_tensor(boxes, dtype=torch.float32)
-            # confs = output[...,4:].copy()
-            confs = confs.cpu().detach().numpy()
-            labels = np.argmax(confs, axis=1).flatten()
-            labels = torch.as_tensor(labels, dtype=torch.int64)
-            scores = np.max(confs, axis=1).flatten()
-            scores = torch.as_tensor(scores, dtype=torch.float32)
-            res[target["image_id"].item()] = {
-                "boxes": boxes,
-                "scores": scores,
-                "labels": labels,
-            }
-        evaluator_time = time.time()
-        coco_evaluator.update(res)
-        evaluator_time = time.time() - evaluator_time
-
-    # gather the stats from all processes
-    coco_evaluator.synchronize_between_processes()
-
-    # accumulate predictions from all images
-    coco_evaluator.accumulate()
-    summary_ = coco_evaluator.summarize()
-    for stat in summary_:
-        logging.debug(stat)
-
-    return coco_evaluator
+    return test(model=model,
+                annotations=annotations,
+                dataset_dir=cfg.data_dir,
+                gt_annotations_path=cfg.json_annotations,
+                visualize=False)
 
 
 def get_args(**kwargs):
@@ -607,14 +564,18 @@ def get_args(**kwargs):
                         help='Specify start epoch if runnig from INTRRUPTED.pth')
     parser.add_argument('--num_epochs', type=int, default=300,
                         help='Number of epochs to train', dest='num_epochs')
-    parser.add_argument('--num_workers', type=int, default=8,
+    parser.add_argument('--num_workers', type=int, default=12,
                         help='Number of processes for loading data into RAM', dest='num_workers')
-    parser.add_argument('-dir', '--data_dir', type=str, default='/home/luch/Programming/Python/TestTasks/detection_dataset',
+    parser.add_argument('-dir', '--data_dir', type=str,
+                        default='/home/luch/Programming/Python/Datasets/trash/test',
                         help='dataset dir', dest='data_dir')
-    parser.add_argument('--train_label', type=str, default='data/train_demo.txt',
+    parser.add_argument('--train_label', type=str, default='data/train_trash.txt',
                         help="train label path", dest='train_label')
-    parser.add_argument('--val_label', type=str, default='data/test_demo.txt',
+    parser.add_argument('--val_label', type=str, default='data/test_trash.txt',
                         help="val label path", dest='val_label')
+    parser.add_argument('--json_annotations', type=str,
+                        default='/home/luch/Programming/Python/Datasets/trash/annotations/instances_test.json',
+                        help='annotations in coco format')
     parser.add_argument('--pretrained', type=str, default='ckpt/default/yolov4.weights', help='pretrained yolov4.weights')
     parser.add_argument('-classes', type=int, default=80, help='dataset classes')
     parser.add_argument(
@@ -631,8 +592,6 @@ def get_args(**kwargs):
         dest='keep_checkpoint_max')
     args = vars(parser.parse_args())
 
-    # for k in args.keys():
-    #     cfg[k] = args.get(k)
     cfg.update(args)
 
     return edict(cfg)

@@ -42,8 +42,8 @@ def main(args):
     for ant in tqdm(annotations):
         id = ant['image_id']
         # name = os.path.join(images_dir_path, images[id]['file_name'])
-        if not (names_dict[id] in real_names):
-            continue
+        # if not (names_dict[id] in real_names):
+        #     continue
         name = os.path.join(args.images_dir_path, names_dict[id])
         cat = ant['category_id']
 
@@ -79,7 +79,7 @@ def main(args):
                 x_max = x_min + int(info[0][2])
                 y_max = y_min + int(info[0][3])
 
-                box_info = " %d,%d,%d,%d,%d" % (
+                box_info = ";%d,%d,%d,%d,%d" % (
                     x_min, y_min, x_max, y_max, int(info[1]))
                 f.write(box_info)
             f.write('\n')
@@ -90,13 +90,13 @@ def parse_arguments(argv):
 
     parser.add_argument('--json_file_path', type=str,
                         help='Path to file with json annotations',
-                        default='datasets/FLIR_ADAS_1_3/annotations/instances_train.json')
+                        default='/home/luch/Programming/Python/autovision/wgisd/instances_train_berries.json')
     parser.add_argument('--images_dir_path', type=str,
                         help='Path to a csv file with annotations',
-                        default='datasets/FLIR_ADAS_1_3/train/thermal_8_bit')
+                        default='/home/luch/Programming/Python/autovision/wgisd/box_train')
     parser.add_argument('--output_path', type=str,
                         help='Path to save the resulting json annotations',
-                        default='../data/train.txt')
+                        default='../data/train_berries.txt')
 
     return parser.parse_args(argv)
 

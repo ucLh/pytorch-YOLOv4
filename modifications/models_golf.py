@@ -453,6 +453,29 @@ class Yolov4(nn.Module):
         return output
 
 
+def post_process_boxes(boxes):
+    new_boxes = []
+    boxes = boxes[0]
+    if not boxes:
+        return boxes
+    for box in boxes:
+        score, cat_id = box[-2], box[-1]
+        if cat_id in [i for i in range(1, 9)]:  # Vehicles
+            box[-1] = 2  # Assign same category for instances of the same supercategory
+            new_boxes.append(box)
+        elif cat_id in [i for i in range(14, 24)]:  # Animals
+            box[-1] = 14  # Assign same category for instances of the same supercategory
+            new_boxes.append(box)
+        elif cat_id == 0 and score > 0.25:  # Person
+            new_boxes.append(box)
+        elif cat_id == 32:
+            new_boxes.append(box)
+        elif score > 0.3:
+            box[-1] = 79  # Assign 'trash' category
+            new_boxes.append(box)
+    return new_boxes
+
+
 if __name__ == "__main__":
     import sys
     import cv2
@@ -507,7 +530,8 @@ if __name__ == "__main__":
 
         # for i in range(2):  # This 'for' loop is for speed check
         #                     # Because the first iteration is usually longer
-        boxes = do_detect(model, sized, 0.3, 0.6, use_cuda)
+        boxes = do_detect(model, sized, 0.1, 0.4, use_cuda)
+        boxes = post_process_boxes(boxes)
 
         if namesfile == None:
             if n_classes == 20:
@@ -518,5 +542,5 @@ if __name__ == "__main__":
                 print("please give namefile")
 
         class_names = load_class_names(namesfile)
-        save_path = f'../preds/golf_gray/{i}.jpg'
-        plot_boxes_cv2(img, boxes[0], save_path, class_names)
+        save_path = f'../preds/golf_gray_coco_train/{i}.jpg'
+        plot_boxes_cv2(img, boxes, save_path, class_names)
