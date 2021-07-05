@@ -7,11 +7,10 @@ def transform_to_onnx(cfgfile, weightfile, batch_size=1):
     model = Darknet(cfgfile)
 
     model.print_network()
-    model.load_weights(weightfile)
-    # ckpt = torch.load(weightfile)
-    # model.load_state_dict(ckpt['state_dict'])
+    # model.load_weights(weightfile)
+    ckpt = torch.load(weightfile)
+    model.load_state_dict(ckpt['state_dict'])
     print('Loading weights from %s... Done!' % (weightfile))
-    # torch.save(model.state_dict(), 'torch_yolov4.pth')
 
     dynamic = False
     if batch_size <= 0:
