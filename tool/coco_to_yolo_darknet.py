@@ -108,13 +108,14 @@ def parse_arguments(argv):
 
     parser.add_argument('--json_file_path', type=str,
                         help='Path to file with json annotations',
-                        default='../instances_test_cars_people.json')
+                        default='../instances_train_cars_people.json')
     parser.add_argument('--images_dir_path', type=str,
                         help='Path to a csv file with annotations',
-                        default='/mnt/Luch/TRASH/')
+                        default='/home/integrant/Documents/ucLh/Programming/Python/Datasets/TRASH/train')
+                        # default='/mnt/Luch/TRASH/')
     parser.add_argument('--output_path', type=str,
                         help='Path to save the resulting json annotations',
-                        default='../data/test_pct.txt')
+                        default='../data/train_pct.txt')
 
     return parser.parse_args(argv)
 

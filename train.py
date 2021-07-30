@@ -37,6 +37,7 @@ from tool.darknet2pytorch import Darknet
 from evaluate_on_coco import test
 
 from tool.tv_reference.utils import collate_fn as val_collate
+from cosine_annealing_warmup import CosineAnnealingWarmupRestarts
 
 
 def bboxes_iou(bboxes_a, bboxes_b, xyxy=True, GIoU=False, DIoU=False, CIoU=False):
@@ -410,7 +411,8 @@ def train(model, device, config, epochs=5, batch_size=32, save_cp=True, log_step
         # Create a dummy scheduler so we can still log lr
         scheduler = optim.lr_scheduler.LambdaLR(optimizer, const_schedule)
     else:
-        scheduler = optim.lr_scheduler.LambdaLR(optimizer, burnin_schedule)
+        scheduler = CosineAnnealingWarmupRestarts(optimizer, first_cycle_steps=8750, cycle_mult=1.0, 
+                                                  max_lr=1e-4, min_lr=1e-6, warmup_steps=1750, gamma=1.0)
 
     criterion = Yolo_loss(device=device, batch=config.batch_size // config.subdivisions, n_classes=config.classes)
     # scheduler = ReduceLROnPlateau(optimizer, mode='max', verbose=True, patience=6, min_lr=1e-7)
@@ -555,7 +557,7 @@ def get_args(**kwargs):
                         help='Use albumentations based dataset instead of default one')
     parser.add_argument('-b', '--batch_size', metavar='B', type=int, nargs='?', default=32,
                         help='Batch size', dest='batch_size')
-    parser.add_argument('--subdivisions', type=int, nargs='?', default=16,
+    parser.add_argument('--subdivisions', type=int, nargs='?', default=8,
                         help='Subdivisions of batch size', dest='subdivisions')
     parser.add_argument('-l', '--learning_rate', metavar='LR', type=float, nargs='?', default=0.000000000261,
                         help='Learning rate', dest='learning_rate')
@@ -567,14 +569,16 @@ def get_args(**kwargs):
     parser.add_argument('--num_workers', type=int, default=12,
                         help='Number of processes for loading data into RAM', dest='num_workers')
     parser.add_argument('-dir', '--data_dir', type=str,
-                        default='/home/luch/Programming/Python/Datasets/trash/test',
+                        # default='/home/luch/Programming/Python/Datasets/trash/test',
+                        default='/home/integrant/Documents/ucLh/Programming/Python/Datasets/TRASH/test',
                         help='dataset dir', dest='data_dir')
-    parser.add_argument('--train_label', type=str, default='data/train_trash.txt',
+    parser.add_argument('--train_label', type=str, default='data/train.txt',
                         help="train label path", dest='train_label')
-    parser.add_argument('--val_label', type=str, default='data/test_trash.txt',
+    parser.add_argument('--val_label', type=str, default='data/test.txt',
                         help="val label path", dest='val_label')
     parser.add_argument('--json_annotations', type=str,
-                        default='/home/luch/Programming/Python/Datasets/trash/annotations/instances_test.json',
+                        # default='/home/luch/Programming/Python/Datasets/trash/annotations/instances_test.json',
+                        default='../Datasets/TRASH/annotations/instances_test.json',
                         help='annotations in coco format')
     parser.add_argument('--pretrained', type=str, default='ckpt/default/yolov4.weights', help='pretrained yolov4.weights')
     parser.add_argument('-classes', type=int, default=80, help='dataset classes')

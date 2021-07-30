@@ -19,6 +19,7 @@ _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 Cfg = EasyDict()
 
 Cfg.use_darknet_cfg = True
+# Cfg.cfgfile = os.path.join(_BASE_DIR, 'cfg', 'yolov3-custom.cfg')
 Cfg.cfgfile = os.path.join(_BASE_DIR, 'cfg', 'yolov4.cfg')
 
 # Cfg.batch = 32

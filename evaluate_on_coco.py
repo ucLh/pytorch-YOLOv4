@@ -159,8 +159,8 @@ def evaluate_on_coco(dataset_dir, gt_annotations_path, resFile, visualise_images
     cocoEval.evaluate()
     cocoEval.accumulate()
     stats = cocoEval.summarize()
-    for stat in stats:
-        logging.debug(stat)
+    # for stat in stats:
+    #     logging.debug(stat)
     return cocoEval
 
 
@@ -183,7 +183,7 @@ def test(model, annotations, dataset_dir, gt_annotations_path, visualize=True):
     boxes_json = []
 
     for i, image_annotation in enumerate(images):
-        logging.info("currently on image: {}/{}".format(i + 1, len(images)))
+        # print("currently on image: {}/{}".format(i + 1, len(images)))
         image_file_name = image_annotation["file_name"]
 
         image_id = image_annotation["id"]
@@ -201,7 +201,7 @@ def test(model, annotations, dataset_dir, gt_annotations_path, visualize=True):
             model.cuda()
 
         start = time.time()
-        boxes = do_detect(model, sized, 0.5, 0.4, use_cuda=1)
+        boxes = do_detect(model, sized, 0.5, 0.3, use_cuda=1)
         boxes = boxes[0]
         finish = time.time()
         if type(boxes) == list:
@@ -225,8 +225,8 @@ def test(model, annotations, dataset_dir, gt_annotations_path, visualize=True):
                 box_json["timing"] = float(finish - start)
                 boxes_json.append(box_json)
                 # print("see box_json: ", box_json)
-                with open(resFile, 'w') as outfile:
-                    json.dump(boxes_json, outfile, default=myconverter, indent=4)
+            with open(resFile, 'w') as outfile:
+                json.dump(boxes_json, outfile, default=myconverter, indent=4)
         else:
             print("warning: output from model after postprocessing is not a list, ignoring")
             return
@@ -246,12 +246,15 @@ def get_args(**kwargs):
     parser.add_argument('-g', '--gpu', metavar='G', type=str, default='0',
                         help='GPU', dest='gpu')
     parser.add_argument('-dir', '--data-dir', type=str,
-                        default='/mnt/Luch/TRASH/test',
+                        # default='/mnt/Luch/TRASH/test',
+                        default='/home/integrant/Documents/ucLh/Programming/Python/Datasets/TRASH/test',
                         help='dataset dir', dest='dataset_dir')
     parser.add_argument('-gta', '--ground_truth_annotations', type=str,
-                        default='/mnt/Luch/TRASH/annotations/instances_test.json',
+                        # default='/mnt/Luch/TRASH/annotations/instances_test.json',
+                        default='/home/integrant/Documents/ucLh/Programming/Python/Datasets/TRASH/annotations/instances_test.json',
                         help='ground truth annotations file', dest='gt_annotations_path')
-    parser.add_argument('-w', '--weights_file', type=str, default='checkpoints/trash/Yolov4_epoch10.pth',
+    parser.add_argument('-w', '--weights_file', type=str, 
+                        default='checkpoints/Yolov4_epoch3.pth',
                         help='weights file to load', dest='weights_file')
     parser.add_argument('-c', '--model_config', type=str, default='cfg/yolov4.cfg',
                         help='model config file to load', dest='model_config')
@@ -328,4 +331,5 @@ if __name__ == "__main__":
     test(model=model,
          annotations=annotations,
          dataset_dir=cfg.dataset_dir,
-         gt_annotations_path=cfg.gt_annotations_path)
+         gt_annotations_path=cfg.gt_annotations_path,
+         )
